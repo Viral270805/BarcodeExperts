@@ -1,0 +1,91 @@
+/* src/components/SignUp.css */
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Arial', sans-serif;
+    background: linear-gradient(to right, #4facfe, #00f2fe);
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.signup-container {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 50px; /* Increased padding for a larger form */
+    border-radius: 15px; /* More rounded corners */
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); /* Deeper shadow for depth */
+    width: 350px; /* Increased width */
+    transform: translateY(0);
+    opacity: 0;
+    animation: fadeIn 0.5s forwards, bounceIn 0.5s forwards; /* Combined animations */
+}
+
+@keyframes fadeIn {
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes bounceIn {
+    0% {
+        transform: scale(0.5);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+h2 {
+    color: #333;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 24px; /* Larger font size for the heading */
+}
+
+form {
+    display: flex;
+    flex-direction: column;
+}
+
+input {
+    margin-bottom: 20px; /* Increased margin for better spacing */
+    padding: 12px; /* Increased padding for larger input fields */
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 16px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input:focus {
+    border-color: #4facfe;
+    box-shadow: 0 0 8px rgba(79, 172, 254, 0.5); /* Enhanced focus effect */
+    outline: none;
+}
+
+button {
+    padding: 12px; /* Increased padding for larger buttons */
+    background-color: #4facfe;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 18px; /* Larger font size for buttons */
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s, box-shadow 0.3s; /* Added box-shadow transition */
+}
+
+button:hover {
+    background-color: #00f2fe;
+    transform: translateY(-3px); /* Slightly larger lift on hover */
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); /* Shadow on hover */
+}
+
+p {
+    color: #333;
+    margin-top: 15px; /* Increased margin for better spacing */
+    text-align: center;
+}
