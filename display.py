@@ -1,15 +1,15 @@
 import smbus
 import time
 
-# I2C address (Check using i2cdetect)
+# I2C address (Check using i2cdetect -y 1)
 I2C_ADDR = 0x27  # Change to 0x3F if needed
 bus = smbus.SMBus(1)
 
 # LCD Commands
-LCD_CHR = 1  # Mode - Sending data
-LCD_CMD = 0  # Mode - Sending command
-LCD_LINE_1 = 0x80  # LCD RAM address for the 1st line
-LCD_LINE_2 = 0xC0  # LCD RAM address for the 2nd line
+LCD_CHR = 1  # Sending data
+LCD_CMD = 0  # Sending command
+LCD_LINE_1 = 0x80  # 1st line
+LCD_LINE_2 = 0xC0  # 2nd line
 ENABLE = 0b00000100  # Enable bit
 
 # Send command to LCD
@@ -38,9 +38,13 @@ def lcd_string(message, line):
 # Main function
 def main():
     lcd_init()
+    
+    # First message
     lcd_string("Hello, User!", LCD_LINE_1)
     lcd_string("Raspberry Pi Zero", LCD_LINE_2)
     time.sleep(3)
+
+    # Second message
     lcd_string("I2C LCD Working!", LCD_LINE_1)
     lcd_string("Enjoy!", LCD_LINE_2)
 
