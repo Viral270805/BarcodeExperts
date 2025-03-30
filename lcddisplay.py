@@ -1,33 +1,41 @@
 import smbus2
 import time
 
-# Use the I2C address found from 'i2cdetect -y 1' (0x27 or 0x3F)
-I2C_ADDR = 0x27  # Change to 0x3F if needed
+I2C_ADDR = 0x27  # Use 0x3F if needed
 bus = smbus2.SMBus(1)
 
 # LCD Commands
-LCD_CLEARDISPLAY = 0x01
-LCD_RETURNHOME = 0x02
-LCD_ENTRYMODESET = 0x04
-LCD_DISPLAYCONTROL = 0x08
-LCD_FUNCTIONSET = 0x20
+LCD_BACKLIGHT = 0x08
+ENABLE = 0b00000100
 
-# Functions to send data
-def lcd_send_byte(data, mode):
-    bus.write_byte_data(I2C_ADDR, mode, data)
+def lcd_command(cmd):
+    high = (cmd & 0xF0) | LCD_BACKLIGHT
+    low = ((cmd << 4) & 0xF0) | LCD_BACKLIGHT
+    bus.write_byte(I2C_ADDR, high)
+    bus.write_byte(I2C_ADDR, high | ENABLE)
     time.sleep(0.001)
+    bus.write_byte(I2C_ADDR, high & ~ENABLE)
+    bus.write_byte(I2C_ADDR, low)
+    bus.write_byte(I2C_ADDR, low | ENABLE)
+    time.sleep(0.001)
+    bus.write_byte(I2C_ADDR, low & ~ENABLE)
 
 def lcd_init():
-    lcd_send_byte(LCD_FUNCTIONSET | 0x08, 0)  # 4-bit mode
-    lcd_send_byte(LCD_DISPLAYCONTROL | 0x04, 0)  # Display on
-    lcd_send_byte(LCD_CLEARDISPLAY, 0)  # Clear display
+    lcd_command(0x33)
+    lcd_command(0x32)
+    lcd_command(0x28)
+    lcd_command(0x0C)
+    lcd_command(0x06)
+    lcd_command(0x01)
     time.sleep(0.2)
 
-def lcd_display_message(message):
+def lcd_display_message(message, line=1):
     lcd_init()
+    lcd_command(0x80 if line == 1 else 0xC0)
     for char in message:
-        lcd_send_byte(ord(char), 1)
+        bus.write_byte(I2C_ADDR, ord(char) | 1)
         time.sleep(0.05)
 
-# Run the display message
-lcd_display_message("Hello, World!")
+# Display a message
+lcd_display_message("Hello, Pi!", 1)
+lcd_display_message("I2C LCD Works!", 2)
