@@ -66,5 +66,3 @@ def main():
     # Cleanup GPIO
     GPIO.cleanup()
 
-if __name__ == "__main__":
-    main()
