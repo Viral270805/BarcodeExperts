@@ -1,21 +1,18 @@
 import RPi.GPIO as GPIO
 import time
 
-# Set pin numbering mode to BCM (Broadcom SOC channel)
+BUZZER_PIN = 18  # Buzzer connected to GPIO 18
+
 GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUZZER_PIN, GPIO.OUT)
 
-# Set GPIO 17 as an output pin
-GPIO.setup(3, GPIO.OUT)
-
-# Blink the LED indefinitely
 try:
-    while True:
-        GPIO.output(3, GPIO.HIGH)  # Turn LED on
-        time.sleep(1)
-        GPIO.output(3, GPIO.LOW)   # Turn LED off
-        time.sleep(1)
+    for _ in range(5):  # Rings 5 times
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
+        time.sleep(0.2)  # Beep ON for 0.2 sec
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        time.sleep(0.2)  # Pause for 0.2 sec
 except KeyboardInterrupt:
     pass
-
-# Clean up GPIO pins on exit
-GPIO.cleanup()
+finally:
+    GPIO.cleanup()
