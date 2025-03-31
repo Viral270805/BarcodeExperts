@@ -1,35 +1,25 @@
-import RPi.GPIO as GPIO
-import time
+import cv2
 
-# Define Pins
-RED_LED = 17
-GREEN_LED = 27
-BUZZER = 18
+# Open camera (0 for default camera, try 1 if needed)
+cap = cv2.VideoCapture(0)
 
-# Setup GPIO
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(RED_LED, GPIO.OUT)
-GPIO.setup(GREEN_LED, GPIO.OUT)
-GPIO.setup(BUZZER, GPIO.OUT)
+if not cap.isOpened():
+    print("❌ Error: Camera not detected!")
+    exit()
 
-try:
-    while True:
-        GPIO.output(RED_LED, GPIO.HIGH)  # Red LED ON
-        GPIO.output(GREEN_LED, GPIO.LOW)  # Green LED OFF
-        GPIO.output(BUZZER, GPIO.LOW)  # Buzzer OFF
-        
-        time.sleep(10)  # Wait for 10 seconds
-        
-        GPIO.output(RED_LED, GPIO.LOW)  # Red LED OFF
-        GPIO.output(GREEN_LED, GPIO.HIGH)  # Green LED ON
-        GPIO.output(BUZZER, GPIO.HIGH)  # Buzzer ON
-        
-        time.sleep(2)  # Green LED & Buzzer ON for 2 seconds
-        
-        GPIO.output(GREEN_LED, GPIO.LOW)  # Green LED OFF
-        GPIO.output(BUZZER, GPIO.LOW)  # Buzzer OFF
-        
-except KeyboardInterrupt:
-    pass
-finally:
-    GPIO.cleanup()
+print("✅ Camera detected! Press 'q' to exit.")
+
+while True:
+    ret, frame = cap.read()  # Capture frame-by-frame
+    if not ret:
+        print("❌ Failed to grab frame")
+        break
+
+    cv2.imshow("OV7670 Camera Test", frame)  # Show the live feed
+
+    # Press 'q' to exit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()  # Release the camera
+cv2.destroyAllWindows()  # Close the window
