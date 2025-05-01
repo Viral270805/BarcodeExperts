@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-const mysql = require('mysql2/promise'); // Use promise-based MySQL
+const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
-const rateLimit = require('express-rate-limit'); // For rate limiting
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Create MySQL connection
+// MySQL config
 const dbConfig = {
     host: 'localhost',
     user: process.env.MYSQL_USER,
@@ -20,7 +20,7 @@ const dbConfig = {
     database: 'billing_system'
 };
 
-// Configure nodemailer
+// Nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -29,27 +29,28 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Object to store OTPs and their expiration times
+// OTP store & limiter
 const otps = {};
-
-// Rate limiter for OTP requests
 const otpLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 5, // Limit each IP to 5 requests per windowMs
-    message: 'Too many OTP requests, please try again later.'
+    windowMs: 5 * 60 * 1000,
+    max: 5,
+    message: 'Too many OTP requests, try again later.'
 });
 
-// Create tables if they do not exist
+// Store last scanned item from Raspberry Pi
+let lastScannedItem = null;
+
+// Create tables
 const createTables = async () => {
     const connection = await mysql.createConnection(dbConfig);
-    const createUsersTable = `
+    await connection.execute(`
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             email VARCHAR(255) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL
         );
-    `;
-    const createBillingTable = `
+    `);
+    await connection.execute(`
         CREATE TABLE IF NOT EXISTS billing (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_email VARCHAR(255) NOT NULL,
@@ -58,181 +59,203 @@ const createTables = async () => {
             amount DECIMAL(10, 2),
             FOREIGN KEY (user_email) REFERENCES users(email)
         );
-    `;
-    await connection.execute(createUsersTable);
-    await connection.execute(createBillingTable);
-    await connection.end(); // Close the connection
+    `);
+    await connection.execute(`
+        CREATE TABLE IF NOT EXISTS items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255),
+            price DECIMAL(10, 2),
+            barcode VARCHAR(255) UNIQUE
+        );
+    `);
+    await connection.end();
 };
-
-// Call the function to create tables
 createTables();
 
-// Account Registration (Sign Up)
+// ----------- AUTH ROUTES -----------
+
 app.post('/api/signup', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const query = 'INSERT INTO users (email, password) VALUES (?, ?)';
-
-        await connection.execute(query, [email, hashedPassword]);
-        await connection.end(); // Close the connection
+        const hashed = await bcrypt.hash(password, 10);
+        const conn = await mysql.createConnection(dbConfig);
+        await conn.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, hashed]);
+        await conn.end();
         res.status(201).json({ message: 'Account registered successfully' });
-    } catch (error) {
-        console.error('Error during signup:', error);
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(400).json({ error: 'Email already exists' });
-        }
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email already exists' });
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// Send OTP with rate limiting
+app.post('/api/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const conn = await mysql.createConnection(dbConfig);
+        const [rows] = await conn.execute('SELECT * FROM users WHERE email = ?', [email]);
+        await conn.end();
+
+        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        const match = await bcrypt.compare(password, rows[0].password);
+        return match
+            ? res.json({ message: 'Login successful' })
+            : res.status(401).json({ error: 'Wrong password' });
+    } catch {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 app.post('/api/forgot-password', otpLimiter, async (req, res) => {
     const { email } = req.body;
-    const query = 'SELECT * FROM users WHERE email = ?';
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otps[email] = { otp, expires: Date.now() + 300000 };
 
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [results] = await connection.execute(query, [email]);
-        await connection.end(); // Close the connection
+        const conn = await mysql.createConnection(dbConfig);
+        const [rows] = await conn.execute('SELECT * FROM users WHERE email = ?', [email]);
+        await conn.end();
 
-        if (results.length === 0) {
-            return res.status(404).json({ error: 'Account not found' });
-        }
+        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-        // Generate a random OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expirationTime = Date.now() + 300000; // OTP valid for 5 minutes
-        otps[email] = { otp, expirationTime };
-
-        // Send OTP via email
-        const mailOptions = {
+        await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: email,
             subject: 'Password Reset OTP',
-            text: `Your OTP for password reset is: ${otp}`
-        };
+            text: `Your OTP is ${otp}`
+        });
 
-        await transporter.sendMail(mailOptions);
-        res.json({ message: 'OTP sent to your email' });
-    } catch (error) {
-        console.error('Error querying database or sending OTP:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.json({ message: 'OTP sent' });
+    } catch {
+        res.status(500).json({ error: 'Email sending failed' });
     }
 });
 
-// Verify OTP and allow password reset
 app.post('/api/verify-otp', async (req, res) => {
     const { email, otp, newPassword } = req.body;
-    const otpData = otps[email];
+    const data = otps[email];
 
-    if (otpData && otpData.otp === otp && Date.now() < otpData.expirationTime) {
-        // Update account password
-        const query = 'UPDATE users SET password = ? WHERE email = ?';
+    if (!data || data.otp !== otp || Date.now() > data.expires) {
+        return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
 
-        try {
-            const connection = await mysql.createConnection(dbConfig);
-            const hashedPassword = await bcrypt.hash(newPassword, 10);
-            await connection.execute(query, [hashedPassword, email]);
-            await connection.end(); // Close the connection
-            delete otps[email]; // Remove OTP after verification
-            res.json({ message: 'Password updated successfully' });
-        } catch (error) {
-            console.error('Error during password update:', error);
-            res.status(500).json({ error: 'Internal server error' });
-        }
-    } else {
-        res.status(400).json({ error: 'Invalid or expired OTP' });
+    try {
+        const hashed = await bcrypt.hash(newPassword, 10);
+        const conn = await mysql.createConnection(dbConfig);
+        await conn.execute('UPDATE users SET password = ? WHERE email = ?', [hashed, email]);
+        await conn.end();
+        delete otps[email];
+        res.json({ message: 'Password updated' });
+    } catch {
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// Login endpoint
-app.post('/api/login', async (req, res) => {
-    const { email, password } = req.body;
-    const query = 'SELECT * FROM users WHERE email = ?';
+// ----------- BILLING ROUTES -----------
+
+app.get('/api/items', async (_, res) => {
+    try {
+        const conn = await mysql.createConnection(dbConfig);
+        const [rows] = await conn.execute('SELECT * FROM items');
+        await conn.end();
+        res.json(rows);
+    } catch {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.post('/api/items', async (req, res) => {
+    const { name, price, barcode } = req.body;
+    if (!name || !price || !barcode) return res.status(400).json({ error: 'Missing fields' });
 
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [results] = await connection.execute(query, [email]);
-        await connection.end(); // Close the connection
-
-        if (results.length === 0) {
-            return res.status(404).json({ error: 'Account not found' });
-        }
-
-        const user = results[0];
-        const isMatch = await bcrypt.compare(password, user.password); // Compare hashed password
-
-        if (isMatch) {
-            res.json({ message: 'Login successful' });
+        const conn = await mysql.createConnection(dbConfig);
+        await conn.execute('INSERT INTO items (name, price, barcode) VALUES (?, ?, ?)', [name, price, barcode]);
+        await conn.end();
+        res.json({ message: 'Item added successfully' });
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') {
+            res.status(400).json({ error: 'Barcode already exists' });
         } else {
-            res.status(401).json({ error: 'Invalid password' });
+            res.status(500).json({ error: 'Server error' });
         }
-    } catch (error) {
-        console.error('Error during login:', error);
-        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// New endpoint to get billing information
-app.get('/api/billing/:email', async (req, res) => {
-    const { email } = req.params;
-    const query = 'SELECT * FROM billing WHERE user_email = ?';
+app.post('/api/items/manual', async (req, res) => {
+    const { name, qty } = req.body;
+    if (!name || !qty) return res.status(400).json({ error: 'Missing name or quantity' });
 
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [results] = await connection.execute(query, [email]);
-        await connection.end(); // Close the connection
+        const conn = await mysql.createConnection(dbConfig);
+        const [rows] = await conn.execute('SELECT * FROM items WHERE name = ?', [name]);
+        await conn.end();
 
-        if (results.length === 0) {
-            return res.status(404).json({ error: 'Billing information not found' });
-        }
+        if (rows.length === 0) return res.status(404).json({ error: 'Item not found' });
 
-        res.json(results[0]); // Return the billing information
-    } catch (error) {
-        console.error('Error retrieving billing information:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        const item = rows[0];
+        res.json({
+            message: 'Item added manually',
+            item: { description: item.name, qty, rate: item.price }
+        });
+    } catch {
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// New endpoint to update billing information
-app.put('/api/billing', async (req, res) => {
-    const { email, billingDetails } = req.body; // billingDetails should contain the fields to update
-    const query = 'UPDATE billing SET ? WHERE user_email = ?';
+// Auto-generate new bill number and date
+app.get('/api/bill/new', async (_, res) => {
+    try {
+        const conn = await mysql.createConnection(dbConfig);
+        const [rows] = await conn.execute('SELECT MAX(id) as maxId FROM billing');
+        const maxId = rows[0].maxId || 0;
+        const billNo = `BILL-${String(maxId + 1).padStart(4, '0')}`;
+        const date = new Date().toISOString().split('T')[0];
+        await conn.end();
+        res.json({ billNo, date });
+    } catch {
+        res.status(500).json({ error: 'Failed to generate bill number' });
+    }
+});
+
+// ----------- SCANNER SUPPORT -----------
+
+app.get('/api/scan-item', async (req, res) => {
+    const { barcode } = req.query;
+    if (!barcode) return res.status(400).json({ error: 'Missing barcode' });
 
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        await connection.execute(query, [billingDetails, email]);
-        await connection.end(); // Close the connection
-        res.json({ message: 'Billing information updated successfully' });
-    } catch (error) {
-        console.error('Error updating billing information:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        const conn = await mysql.createConnection(dbConfig);
+        const [rows] = await conn.execute('SELECT * FROM items WHERE barcode = ?', [barcode]);
+        await conn.end();
+
+        if (rows.length === 0) return res.status(404).json({ error: 'Item not found' });
+
+        const item = rows[0];
+        lastScannedItem = {
+            description: item.name,
+            qty: 1,
+            rate: item.price
+        };
+
+        res.json({ message: 'Item scanned', item: lastScannedItem });
+    } catch {
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// New endpoint to fetch items
-app.get('/api/items', async (req, res) => {
-    const query = 'SELECT * FROM items';
-
-    try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [results] = await connection.execute(query);
-        await connection.end(); // Close the connection
-
-        if (results.length === 0) {
-            return res.status(404).json({ error: 'Items not found' });
-        }
-
-        res.json(results); // Return the items
-    } catch (error) {
-        console.error('Error retrieving items:', error);
-        res.status(500).json({ error: 'Internal server error' });
+app.get('/api/last-scanned', (req, res) => {
+    if (lastScannedItem) {
+        const temp = lastScannedItem;
+        lastScannedItem = null;
+        res.json(temp);
+    } else {
+        res.status(204).send(); // No Content
     }
 });
 
-// Start the server
+// ----------- START SERVER -----------
+
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`✅ Server running on port ${PORT}`);
 });
