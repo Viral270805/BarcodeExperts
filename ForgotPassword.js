@@ -1,6 +1,6 @@
-// src/components/ForgotPassword.js
 import React, { useState } from 'react';
 import axios from 'axios';
+import './ForgotPassword.css';
 
 const ForgotPassword = () => {
     const [email, setEmail] = useState('');
@@ -31,20 +31,40 @@ const ForgotPassword = () => {
     };
 
     return (
-        <div>
-            <h2>Forgot Password</h2>
-            {step === 1 ? (
-                <form onSubmit={handleRequestOtp}>
-                    <input type="email" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                    <button type ="submit">Request OTP</button>
-                </form>
-            ) : (
-                <form onSubmit={handleVerifyOtp}>
-                    <input type="text" placeholder="Enter OTP" value={otp} onChange={(e) => setOtp(e.target.value)} required />
-                    <input type="password" placeholder="Enter new password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
-                    <button type="submit">Reset Password</button>
-                </form>
-            )}
+        <div className="forgot-password-container">
+            <form>
+                <h2>Forgot Password</h2>
+                {step === 1 ? (
+                    <div className="form-step">
+                        <input
+                            type="email"
+                            placeholder="Enter your email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                        />
+                        <button onClick={handleRequestOtp}>Request OTP</button>
+                    </div>
+                ) : (
+                    <div className="form-step">
+                        <input
+                            type="text"
+                            placeholder="Enter OTP"
+                            value={otp}
+                            onChange={(e) => setOtp(e.target.value)}
+                            required
+                        />
+                        <input
+                            type="password"
+                            placeholder="Enter new password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            required
+                        />
+                        <button onClick={handleVerifyOtp}>Reset Password</button>
+                    </div>
+                )}
+            </form>
         </div>
     );
 };
